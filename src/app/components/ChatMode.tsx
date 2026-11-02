@@ -1,24 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Mic, Volume2, Copy, RefreshCw, Radio, Play, ChevronDown, ChevronUp, StopCircle, Paperclip, Trash2, History, Plus, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Send, Mic, Volume2, Copy, RefreshCw, Radio, Play, ChevronDown, ChevronUp, StopCircle, Paperclip, Trash2, History, Plus, MessageSquare, ChevronLeft, ChevronRight, BookmarkPlus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner';
-import { SessionHistorySidebar } from './SessionHistorySidebar';
 
 type Message = {
   id: string;
-  type: 'user' | 'assistant' | 'realtime-session';
+  type: 'user' | 'assistant';
   text: string;
   language?: string;
   hasAudio?: boolean;
   timestamp: Date;
-  sessionId?: string;
-  sessionData?: RealtimeSession;
 };
 
 type RealtimeSession = {
   id: string;
+  name: string;
   startTime: Date;
   endTime?: Date;
   speakers: SpeakerSegment[];
@@ -54,13 +52,7 @@ const detectDialect = (text: string): string => {
 
 // Mock translation
 const mockTranslate = (text: string, targetLang: string): string => {
-  const responses: Record<string, string> = {
-    '普通话': `${text}（已翻译为普通话）`,
-    '粤语': `${text}（已翻译为粤语）`,
-    '四川话': `${text}（已翻译为四川话）`,
-    '英语': `${text} (Translated to English)`,
-  };
-  return responses[targetLang] || text;
+  return `${text}（翻译为${targetLang}）`;
 };
 
 // 解析消息文本中的嵌入语音
@@ -118,8 +110,18 @@ const generateTitle = (messages: Message[]): string => {
 };
 
 export function ChatMode() {
-  // 对话历史状态
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // ========== 实时翻译状态 ==========
+  const [isRealtimeExpanded, setIsRealtimeExpanded] = useState(false);
+  const [realtimeHeight, setRealtimeHeight] = useState(300);
+  const [currentSession, setCurrentSession] = useState<RealtimeSession | null>(null);
+  const [realtimeSpeakers, setRealtimeSpeakers] = useState<SpeakerSegment[]>([]);
+  const [displayMode, setDisplayMode] = useState<'merged' | 'separated'>('merged');
+  const [isRecordingRealtime, setIsRecordingRealtime] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState<RealtimeSession[]>([]);
+  const [isRealtimeHistoryOpen, setIsRealtimeHistoryOpen] = useState(false);
+  
+  // ========== 对话状态 ==========
+  const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([
     {
       id: 'conv-1',
@@ -135,55 +137,15 @@ export function ChatMode() {
       createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     },
-    {
-      id: 'conv-2',
-      title: '粤语翻译练习',
-      messages: [
-        {
-          id: '2',
-          type: 'user',
-          text: '靓仔，你好啊',
-          language: '粤语',
-          timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-        },
-      ],
-      createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-      updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-    },
   ]);
   const [currentConversationId, setCurrentConversationId] = useState<string>('conv-1');
-  
-  // 获取当前对话
   const currentConversation = conversations.find(c => c.id === currentConversationId);
-  const [messages, setMessages] = useState<Message[]>(currentConversation?.messages || [
-    {
-      id: '1',
-      type: 'assistant',
-      text: '你好！我是方言助手，支持多种方言和多语混杂识别。你可以用任何方言或语言跟我聊天。',
-      timestamp: new Date(),
-    },
-    {
-      id: '2',
-      type: 'assistant',
-      text: '侬这个字发[[ 语音 | 5" ]]的音，上海话里很常见。',
-      hasAudio: true,
-      timestamp: new Date(),
-    },
-  ]);
-  
+  const [messages, setMessages] = useState<Message[]>(currentConversation?.messages || []);
   const [input, setInput] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('普通话');
   const [isRecording, setIsRecording] = useState(false);
   
-  // 实时翻译状态
-  const [isRealtimeOpen, setIsRealtimeOpen] = useState(false);
-  const [currentSession, setCurrentSession] = useState<RealtimeSession | null>(null);
-  const [realtimeSpeakers, setRealtimeSpeakers] = useState<SpeakerSegment[]>([]);
-  const [displayMode, setDisplayMode] = useState<'merged' | 'separated'>('merged');
-  const [isRecordingRealtime, setIsRecordingRealtime] = useState(false);
-  const [sessionHistory, setSessionHistory] = useState<RealtimeSession[]>([]);
-  const [isHistoryViewOpen, setIsHistoryViewOpen] = useState(false);
-  const [realtimePanelHeight, setRealtimePanelHeight] = useState(280);
+  // ========== 拖拽调整 ==========
   const [isResizing, setIsResizing] = useState(false);
   const [dragStartY, setDragStartY] = useState(0);
   const [dragStartHeight, setDragStartHeight] = useState(0);
@@ -191,17 +153,15 @@ export function ChatMode() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const realtimeEndRef = useRef<HTMLDivElement>(null);
 
+  // ========== Effects ==========
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    if (isRealtimeOpen) {
-      realtimeEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [realtimeSpeakers, isRealtimeOpen]);
+    realtimeEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [realtimeSpeakers]);
 
-  // 更新当前对话的消息
   useEffect(() => {
     if (currentConversationId) {
       const conv = conversations.find(c => c.id === currentConversationId);
@@ -211,7 +171,36 @@ export function ChatMode() {
     }
   }, [currentConversationId, conversations]);
 
-  // 保存消息到当前对话
+  // 拖拽调整高度
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      
+      const newHeight = dragStartHeight + (e.clientY - dragStartY);
+      const clampedHeight = Math.max(150, Math.min(500, newHeight));
+      setRealtimeHeight(clampedHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, dragStartY, dragStartHeight]);
+
+  // ========== 对话相关函数 ==========
   const saveMessages = (newMessages: Message[]) => {
     setMessages(newMessages);
     setConversations(prev => prev.map(conv => 
@@ -226,7 +215,6 @@ export function ChatMode() {
     ));
   };
 
-  // 新建对话
   const createNewConversation = () => {
     const newConv: Conversation = {
       id: `conv-${Date.now()}`,
@@ -235,7 +223,7 @@ export function ChatMode() {
         {
           id: `${Date.now()}`,
           type: 'assistant',
-          text: '你好！我是方言助手，支持多种方言和多语混杂识别。你可以用任何方言或语言跟我聊天。',
+          text: '你好！我是方言助手，支持多种方言和多语混杂识别。',
           timestamp: new Date(),
         },
       ],
@@ -244,18 +232,16 @@ export function ChatMode() {
     };
     setConversations(prev => [newConv, ...prev]);
     setCurrentConversationId(newConv.id);
-    setIsHistoryOpen(false);
+    setIsChatHistoryOpen(false);
     toast.success('已创建新对话');
   };
 
-  // 切换对话
   const switchConversation = (convId: string) => {
     setCurrentConversationId(convId);
-    setIsHistoryOpen(false);
+    setIsChatHistoryOpen(false);
     toast.success('已切换对话');
   };
 
-  // 删除对话
   const deleteConversation = (convId: string) => {
     if (conversations.length === 1) {
       toast.error('至少需要保留一个对话');
@@ -288,7 +274,6 @@ export function ChatMode() {
     saveMessages(newMessages);
     setInput('');
 
-    // Simulate assistant response
     setTimeout(() => {
       const response = mockTranslate(input, targetLanguage);
       const assistantMessage: Message = {
@@ -314,6 +299,66 @@ export function ChatMode() {
     }
   };
 
+  // ========== 实时翻译相关函数 ==========
+  const createRealtimeSession = () => {
+    const sessionName = `会话 ${new Date().toLocaleString('zh-CN', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })}`; 
+    
+    const newSession: RealtimeSession = {
+      id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      name: sessionName,
+      startTime: new Date(),
+      speakers: [],
+      status: 'active',
+    };
+    
+    setCurrentSession(newSession);
+    setRealtimeSpeakers([]);
+    
+    if (!isRealtimeExpanded) {
+      setIsRealtimeExpanded(true);
+    }
+    
+    // 自动打开麦克风
+    setIsRecordingRealtime(true);
+    toast.success('已创建实时翻译会话并开启麦克风');
+    simulateRealtimeInput();
+  };
+
+  const endRealtimeSession = () => {
+    if (!currentSession) return;
+    
+    if (isRecordingRealtime) {
+      setIsRecordingRealtime(false);
+    }
+
+    const endedSession: RealtimeSession = {
+      ...currentSession,
+      endTime: new Date(),
+      speakers: realtimeSpeakers,
+      status: 'ended',
+    };
+
+    const isEditingExisting = sessionHistory.some(s => s.id === currentSession.id);
+    
+    if (isEditingExisting) {
+      setSessionHistory(prev => prev.map(s => 
+        s.id === currentSession.id ? endedSession : s
+      ));
+      toast.success(`会话已更新，共记录 ${realtimeSpeakers.length} 条内容`);
+    } else {
+      setSessionHistory(prev => [endedSession, ...prev]);
+      toast.success(`会话已结束，共记录 ${realtimeSpeakers.length} 条内容`);
+    }
+    
+    setCurrentSession(null);
+    setRealtimeSpeakers([]);
+  };
+
   const toggleRealtimeTranslation = (checked: boolean) => {
     if (!currentSession) {
       toast.error('请先创建实时翻译会话');
@@ -330,77 +375,6 @@ export function ChatMode() {
     }
   };
 
-  // 创建新会话
-  const createRealtimeSession = () => {
-    const newSession: RealtimeSession = {
-      id: `session-${Date.now()}`,
-      startTime: new Date(),
-      speakers: [],
-      status: 'active',
-    };
-    
-    setCurrentSession(newSession);
-    setRealtimeSpeakers([]);
-    
-    // 在聊天中添加会话创建气泡
-    const sessionMessage: Message = {
-      id: `session-msg-${newSession.id}`,
-      type: 'realtime-session',
-      text: `实时翻译会话 - 进行中`,
-      timestamp: new Date(),
-      sessionId: newSession.id,
-      sessionData: newSession,
-    };
-    
-    saveMessages([...messages, sessionMessage]);
-    
-    toast.success('已创建实时翻译会话');
-  };
-
-  // 结束当前会话
-  const endRealtimeSession = () => {
-    if (!currentSession) return;
-    
-    if (isRecordingRealtime) {
-      setIsRecordingRealtime(false);
-    }
-
-    setIsHistoryViewOpen(false);
-
-    const endedSession: RealtimeSession = {
-      ...currentSession,
-      endTime: new Date(),
-      speakers: realtimeSpeakers,
-      status: 'ended',
-    };
-
-    // 保存到历史记录
-    setSessionHistory(prev => [endedSession, ...prev]);
-    
-    // 更新聊天消息中的会话气泡
-    const updatedMessages = messages.map(msg => 
-      msg.sessionId === currentSession.id
-        ? {
-            ...msg,
-            text: `实时翻译会话 - 已结束 · ${endedSession.speakers.length} 条记录`,
-            sessionData: endedSession,
-          }
-        : msg
-    );
-    
-    saveMessages(updatedMessages);
-    
-    setCurrentSession(null);
-    setRealtimeSpeakers([]);
-    toast.success(`会话已结束，共记录 ${realtimeSpeakers.length} 条内容`);
-  };
-
-  // 删除历史会话
-  const deleteHistorySession = (sessionId: string) => {
-    setSessionHistory(prev => prev.filter(s => s.id !== sessionId));
-    toast.success('已删除会话');
-  };
-
   const simulateRealtimeInput = () => {
     const mockDialogues = [
       { speaker: 'A', text: '侬好啊，今朝天气老好个！', language: '上海话' },
@@ -414,7 +388,7 @@ export function ChatMode() {
       setTimeout(() => {
         const verticalPos = Math.random() * 80 + 10;
         const segment: SpeakerSegment = {
-          id: `segment-${Date.now()}-${index}`,
+          id: `segment-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${index}`,
           speaker: dialogue.speaker,
           text: dialogue.text,
           translation: mockTranslate(dialogue.text, '普通话'),
@@ -426,6 +400,62 @@ export function ChatMode() {
         setRealtimeSpeakers((prev) => [...prev, segment]);
       }, (index + 1) * 2000);
     });
+  };
+
+  const deleteHistorySession = (sessionId: string) => {
+    setSessionHistory(prev => prev.filter(s => s.id !== sessionId));
+    toast.success('已删除会话');
+  };
+
+  const viewSessionDetail = (sessionData: RealtimeSession) => {
+    if (currentSession) {
+      toast.error('请先结束当前会话');
+      return;
+    }
+    
+    setCurrentSession(sessionData);
+    setRealtimeSpeakers(sessionData.speakers);
+    setIsRealtimeHistoryOpen(false);
+    
+    if (!isRealtimeExpanded) {
+      setIsRealtimeExpanded(true);
+    }
+    
+    toast.success('已进入会话编辑模式，可继续录音');
+  };
+
+  const saveSegmentToNotebook = (segment: SpeakerSegment) => {
+    const existing = localStorage.getItem('favoriteRecords');
+    const records = existing ? JSON.parse(existing) : [];
+    const newRecord = {
+      id: `notebook-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      text: segment.text,
+      translation: segment.translation,
+      language: segment.language,
+      speaker: segment.speaker,
+      mode: 'live' as const,
+      timestamp: new Date().toISOString(),
+    };
+    records.unshift(newRecord);
+    localStorage.setItem('favoriteRecords', JSON.stringify(records));
+    toast.success('已保存到收藏');
+  };
+
+  const saveMessageToNotebook = (message: Message) => {
+    const existing = localStorage.getItem('chatRecords');
+    const records = existing ? JSON.parse(existing) : [];
+    const newRecord = {
+      id: `notebook-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      text: message.text,
+      language: message.language,
+      mode: 'chat' as const,
+      role: message.type as 'user' | 'assistant',
+      timestamp: new Date().toISOString(),
+      hasAudio: message.hasAudio,
+    };
+    records.unshift(newRecord);
+    localStorage.setItem('chatRecords', JSON.stringify(records));
+    toast.success('已保存到记录本');
   };
 
   const playAudio = (messageId: string) => {
@@ -445,89 +475,343 @@ export function ChatMode() {
     toast.success('重新翻译中...');
   };
 
-  const viewSessionDetail = (sessionData: RealtimeSession) => {
-    if (currentSession) {
-      toast.error('请先结束当前会话');
-      return;
-    }
-    
-    setCurrentSession(sessionData);
-    setRealtimeSpeakers(sessionData.speakers);
-    setIsRealtimeOpen(true);
-    
-    toast.success('已进入会话编辑模式，可继续录音');
-  };
-
-  const deleteSession = (sessionId: string) => {
-    const updatedMessages = messages.filter((msg) => msg.id !== sessionId);
-    saveMessages(updatedMessages);
-    toast.success('已删除会话记录');
-  };
-
-  // 拖拽调整面板高度
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-      
-      const newHeight = dragStartHeight - dragStartY + e.clientY;
-      const clampedHeight = Math.max(150, Math.min(600, newHeight));
-      setRealtimePanelHeight(clampedHeight);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'ns-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing, dragStartY, dragStartHeight]);
-
   return (
-    <div className="flex h-full relative">
-      {/* History Sidebar */}
-      <div
-        className={`absolute top-0 left-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-10 ${
-          isHistoryOpen ? 'w-64' : 'w-0'
-        } overflow-hidden`}
+    <div className="flex flex-col h-full">
+      {/* ========== 上半部分：实时翻译区域 ========== */}
+      <div 
+        className={`flex-shrink-0 border-b-2 border-purple-300 bg-gradient-to-b from-purple-50 to-purple-100 relative ${
+          isRealtimeExpanded ? '' : 'h-auto'
+        }`}
+        style={isRealtimeExpanded ? { height: `${realtimeHeight}px` } : {}}
       >
-        <div className="flex flex-col h-full w-64">
-          {/* Sidebar Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">历史记录</h2>
-            <button
-              onClick={() => setIsHistoryOpen(false)}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="收起侧边栏"
+        {isRealtimeExpanded ? (
+          <div className="h-full flex overflow-hidden">
+            {/* 左侧：会话历史侧边栏 */}
+            <div
+              className={`bg-white border-r border-gray-200 flex-shrink-0 transition-all duration-300 ${
+                isRealtimeHistoryOpen ? 'w-64' : 'w-0'
+              } overflow-hidden`}
             >
-              <ChevronLeft className="w-5 h-5 text-gray-500" />
+              <div className="w-64 h-full flex flex-col">
+                <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-900">历史会话</h3>
+                  <button
+                    onClick={() => setIsRealtimeHistoryOpen(false)}
+                    className="p-1 rounded hover:bg-gray-100"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                  {sessionHistory.map((session) => (
+                    <div
+                      key={session.id}
+                      onClick={() => viewSessionDetail(session)}
+                      className="group bg-purple-50 border border-purple-200 rounded-lg p-2 hover:shadow-md transition-all cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <p className="text-xs font-semibold text-gray-900 truncate flex-1">
+                          {session.name}
+                        </p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteHistorySession(session.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-500" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-purple-600 font-medium">
+                        {session.speakers.length} 条记录
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 右侧：实时翻译主区域 */}
+            <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+              {/* 实时翻译顶部栏 */}
+              <div className="flex items-center px-4 py-3 border-b border-purple-200/50 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  {!isRealtimeHistoryOpen && (
+                    <>
+                      <button
+                        onClick={() => setIsRealtimeHistoryOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-purple-200 rounded-lg transition-all"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                        会话历史
+                      </button>
+                      
+                      <div className="w-px h-4 bg-purple-300"></div>
+                    </>
+                  )}
+                  
+                  {currentSession && (
+                    <>
+                      <button
+                        onClick={() => toggleRealtimeTranslation(!isRecordingRealtime)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                          isRecordingRealtime
+                            ? 'bg-red-500 text-white hover:bg-red-600 shadow-md'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                        }`}
+                      >
+                        <Mic className={`w-4 h-4 ${isRecordingRealtime ? 'animate-pulse' : ''}`} />
+                        {isRecordingRealtime ? '录音中' : '开启麦克风'}
+                      </button>
+                      
+                      <div className="w-px h-4 bg-purple-300"></div>
+                    </>
+                  )}
+                  
+                  <button
+                    onClick={currentSession ? endRealtimeSession : createRealtimeSession}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                      currentSession
+                        ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+                        : 'bg-purple-500 text-white hover:bg-purple-600 shadow-sm font-semibold'
+                    }`}
+                  >
+                    {currentSession ? '结束会话' : '创建会话'}
+                  </button>
+                </div>
+                
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setDisplayMode('merged')}
+                    disabled={!currentSession}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                      !currentSession
+                        ? 'text-gray-400 cursor-not-allowed bg-gray-100'
+                        : displayMode === 'merged' 
+                        ? 'bg-purple-500 text-white shadow-sm font-semibold' 
+                        : 'bg-white text-gray-700 hover:bg-purple-50 border border-gray-200'
+                    }`}
+                  >
+                    合并模式
+                  </button>
+                  <button
+                    onClick={() => setDisplayMode('separated')}
+                    disabled={!currentSession}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                      !currentSession
+                        ? 'text-gray-400 cursor-not-allowed bg-gray-100'
+                        : displayMode === 'separated' 
+                        ? 'bg-purple-500 text-white shadow-sm font-semibold' 
+                        : 'bg-white text-gray-700 hover:bg-purple-50 border border-gray-200'
+                    }`}
+                  >
+                    弹幕模式
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => setIsRealtimeExpanded(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-purple-200 rounded-lg transition-all"
+                >
+                  <Radio className="w-4 h-4" />
+                  实时翻译
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 实时翻译内容区域 */}
+              <div className="flex-1 overflow-hidden">
+                {currentSession ? (
+                  displayMode === 'merged' ? (
+                    <div className="h-full overflow-y-auto p-3 space-y-2">
+                      {realtimeSpeakers.length > 0 ? (
+                        <>
+                          {realtimeSpeakers.map((segment) => (
+                            <div
+                              key={segment.id}
+                              className="group flex items-start gap-2 bg-white rounded-lg border border-purple-100 p-2 hover:border-purple-300"
+                            >
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                                segment.speaker === 'A' ? 'bg-blue-500 text-white' :
+                                segment.speaker === 'B' ? 'bg-green-500 text-white' :
+                                'bg-orange-500 text-white'
+                              }`}>
+                                {segment.speaker}
+                              </div>
+
+                              <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
+                                <div>
+                                  <span className="text-xs text-purple-500 font-medium block mb-0.5">{segment.language}</span>
+                                  <p className="text-sm text-gray-900">{segment.text}</p>
+                                </div>
+                                <div className="border-l border-purple-100 pl-2">
+                                  <span className="text-xs text-gray-400 font-medium block mb-0.5">翻译</span>
+                                  <p className="text-sm text-gray-600">{segment.translation}</p>
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => saveSegmentToNotebook(segment)}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-purple-100 flex-shrink-0"
+                              >
+                                <BookmarkPlus className="w-3.5 h-3.5 text-purple-500" />
+                              </button>
+                            </div>
+                          ))}
+                          <div ref={realtimeEndRef} />
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <p className="text-sm text-gray-400">等待录音内容...</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative h-full bg-white overflow-hidden">
+                      <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500 z-10"></div>
+                      <div className="absolute inset-0 pr-4">
+                        {realtimeSpeakers.map((segment) => (
+                          <div
+                            key={segment.id}
+                            className="absolute right-4 group"
+                            style={{
+                              top: `${segment.verticalPosition}%`,
+                              transform: 'translateY(-50%)',
+                            }}
+                          >
+                            <div className="bg-purple-100 border border-purple-200 rounded-lg p-2 shadow-md">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  segment.speaker === 'A' ? 'bg-blue-500 text-white' :
+                                  segment.speaker === 'B' ? 'bg-green-500 text-white' :
+                                  'bg-orange-500 text-white'
+                                }`}>
+                                  {segment.speaker}
+                                </div>
+                                <span className="text-xs text-gray-600">{segment.language}</span>
+                              </div>
+                              <p className="text-sm text-gray-900 mb-1">{segment.text}</p>
+                              <p className="text-xs text-gray-600">→ {segment.translation}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <Radio className="w-12 h-12 mb-3 text-purple-400" />
+                    <p className="text-base font-semibold mb-2">开始实时翻译</p>
+                    <p className="text-sm text-gray-600 text-center max-w-md">
+                      点击"创建会话"开始实时识别多人对话
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* 收起状态的精简顶部栏 */
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-purple-200/50">
+            <div className="flex items-center gap-3">
+              <button
+                disabled
+                className="px-3 py-1.5 text-sm font-medium text-gray-400 cursor-not-allowed bg-gray-100 rounded-lg"
+              >
+                会话历史
+              </button>
+              
+              <div className="w-px h-4 bg-purple-300"></div>
+              
+              {currentSession && (
+                <>
+                  <button
+                    onClick={() => toggleRealtimeTranslation(!isRecordingRealtime)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                      isRecordingRealtime
+                        ? 'bg-red-500 text-white hover:bg-red-600 shadow-md'
+                        : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                    }`}
+                  >
+                    <Mic className={`w-4 h-4 ${isRecordingRealtime ? 'animate-pulse' : ''}`} />
+                    {isRecordingRealtime ? '录音中' : '开启麦克风'}
+                  </button>
+                  
+                  <div className="w-px h-4 bg-purple-300"></div>
+                </>
+              )}
+              
+              <button
+                onClick={currentSession ? endRealtimeSession : createRealtimeSession}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                  currentSession
+                    ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+                    : 'bg-purple-500 text-white hover:bg-purple-600 shadow-sm font-semibold'
+                }`}
+              >
+                {currentSession ? '结束会话' : '创建会话'}
+              </button>
+            </div>
+            
+            <button
+              onClick={() => setIsRealtimeExpanded(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-purple-200 rounded-lg transition-all"
+            >
+              <Radio className="w-4 h-4" />
+              实时翻译
+              <ChevronDown className="w-4 h-4" />
             </button>
           </div>
+        )}
 
-          {/* New Conversation Button */}
-          <div className="p-3 border-b border-gray-200">
-            <button
-              onClick={createNewConversation}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="text-sm font-medium">新建对话</span>
-            </button>
+        {/* 拖拽分隔条（仅展开时显示） */}
+        {isRealtimeExpanded && (
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setIsResizing(true);
+              setDragStartY(e.clientY);
+              setDragStartHeight(realtimeHeight);
+            }}
+            className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize hover:bg-purple-300 hover:bg-opacity-50 transition-colors z-20 group"
+          >
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-1.5 bg-purple-400 rounded-full group-hover:bg-purple-600 transition-all" />
           </div>
+        )}
+      </div>
 
-          {/* Conversations List */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-2 space-y-1">
+      {/* ========== 下半部分：对话区域 ========== */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧：对话历史侧边栏 */}
+        <div
+          className={`border-r border-gray-200 bg-white transition-all duration-300 ${
+            isChatHistoryOpen ? 'w-64' : 'w-0'
+          } overflow-hidden flex-shrink-0`}
+        >
+          <div className="w-64 h-full flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">对话历史</h2>
+              <button
+                onClick={() => setIsChatHistoryOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100"
+              >
+                <ChevronLeft className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-3 border-b border-gray-200">
+              <button
+                onClick={createNewConversation}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm font-medium">新建对话</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {conversations.map((conv) => (
                 <div
                   key={conv.id}
@@ -554,8 +838,7 @@ export function ChatMode() {
                         e.stopPropagation();
                         deleteConversation(conv.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-red-50 transition-opacity"
-                      title="删除对话"
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-red-50"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-600" />
                     </button>
@@ -565,36 +848,27 @@ export function ChatMode() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Chat Area */}
-      <div className="flex flex-col flex-1">
-        {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200">
-          <div className="px-4 py-3 flex items-center justify-between gap-4">
-            {/* Left: History Button */}
-            <button
-              onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-              className={`flex items-center gap-2 bg-white border border-gray-200 px-3.5 py-2 hover:border-gray-300 hover:shadow-sm transition-all duration-300 ${
-                isHistoryOpen 
-                  ? 'rounded-l-xl rounded-r-none border-r-0' 
-                  : 'rounded-xl'
-              }`}
-            >
-              {isHistoryOpen ? (
-                <ChevronLeft className="w-4 h-4 text-blue-400" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-blue-400" />
-              )}
-              <History className="w-4 h-4 text-gray-600" />
-              <span className="text-sm font-medium text-gray-700">历史</span>
-            </button>
+        {/* 右侧：对话主区域 */}
+        <div className="flex-1 flex flex-col">
+          {/* 对话顶部栏 */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center flex-shrink-0">
+            {!isChatHistoryOpen ? (
+              <button
+                onClick={() => setIsChatHistoryOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+              >
+                <ChevronRight className="w-4 h-4" />
+                对话历史
+              </button>
+            ) : (
+              <div className="w-[100px]"></div>
+            )}
 
-            {/* Center: Language Selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">回复语言：</span>
+            <div className="flex-1 flex items-center justify-center gap-2">
+              <span className="text-sm text-gray-600">回复语言:</span>
               <Select value={targetLanguage} onValueChange={setTargetLanguage}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-[120px] h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -607,289 +881,13 @@ export function ChatMode() {
                 </SelectContent>
               </Select>
             </div>
-            
-            {/* Right: Realtime Toggle */}
-            <button
-              onClick={() => setIsRealtimeOpen(!isRealtimeOpen)}
-              className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <Radio className={`w-4 h-4 ${currentSession ? 'text-purple-600' : 'text-gray-700'}`} />
-              <span className="text-sm text-gray-700">实时翻译</span>
-              {isRealtimeOpen ? (
-                <ChevronUp className="w-4 h-4 text-gray-500" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              )}
-            </button>
+
+            <Volume2 className="w-5 h-5 text-gray-500" />
           </div>
 
-          {/* Realtime Translation Window */}
-          {isRealtimeOpen && (
-            <div className="relative border-t border-gray-200 bg-gradient-to-b from-purple-50 to-white">
-              <div 
-                className="px-4 py-3" 
-                style={{ height: `${realtimePanelHeight}px` }}
-              >
-                {/* Control Bar */}
-                <div className="flex items-center justify-between mb-3">
-                  {/* Left: Session Controls */}
-                  <div className="flex items-center gap-2">
-                    {currentSession && (
-                      <button
-                        onClick={() => setIsHistoryViewOpen(!isHistoryViewOpen)}
-                        className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg transition-all text-sm font-medium ${
-                          isHistoryViewOpen
-                            ? 'bg-purple-100 border-purple-300 text-purple-700'
-                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <History className={`w-4 h-4 ${isHistoryViewOpen ? 'text-purple-600' : 'text-gray-500'}`} />
-                        <span>{isHistoryViewOpen ? '收起历史' : '展开历史'} ({sessionHistory.length})</span>
-                        {isHistoryViewOpen ? (
-                          <ChevronRight className="w-3.5 h-3.5 text-purple-500 ml-0.5" />
-                        ) : (
-                          <ChevronLeft className="w-3.5 h-3.5 text-gray-500 ml-0.5" />
-                        )}
-                      </button>
-                    )}
-                    
-                    {currentSession ? (
-                      <button
-                        onClick={endRealtimeSession}
-                        className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
-                      >
-                        <StopCircle className="w-4 h-4" />
-                        结束会话
-                      </button>
-                    ) : (
-                      <button
-                        onClick={createRealtimeSession}
-                        className="flex items-center gap-2 bg-purple-50 border border-purple-200 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition-colors text-sm font-medium"
-                      >
-                        <Plus className="w-4 h-4" />
-                        创建会话
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Center: Display Mode Selector */}
-                  {currentSession && (
-                    <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1">
-                      <button
-                        onClick={() => setDisplayMode('merged')}
-                        className={`px-4 py-1.5 text-sm rounded-md transition-colors font-medium ${
-                          displayMode === 'merged'
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                        }`}
-                      >
-                        合并模式
-                      </button>
-                      <button
-                        onClick={() => setDisplayMode('separated')}
-                        className={`px-4 py-1.5 text-sm rounded-md transition-colors font-medium ${
-                          displayMode === 'separated'
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                        }`}
-                      >
-                        弹幕模式
-                      </button>
-                    </div>
-                  )}
-                  
-                  {/* Right: Recording Control */}
-                  {currentSession && (
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        {isRecordingRealtime ? (
-                          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-sm font-medium text-red-700">录音中</span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-500 font-medium">未录音</span>
-                        )}
-                      </div>
-                      
-                      <button
-                        onClick={() => toggleRealtimeTranslation(!isRecordingRealtime)}
-                        className={`relative inline-flex h-9 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
-                          isRecordingRealtime ? 'bg-red-500' : 'bg-gray-300'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-7 w-7 transform rounded-full bg-white shadow-lg transition-transform ${
-                            isRecordingRealtime ? 'translate-x-8' : 'translate-x-1'
-                          }`}
-                        >
-                          <Mic className={`w-4 h-4 m-1.5 ${isRecordingRealtime ? 'text-red-500' : 'text-gray-400'}`} />
-                        </span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Content Area */}
-                <div style={{ height: `${realtimePanelHeight - 60}px` }} className="relative flex gap-0">
-                  <div className={`transition-all duration-300 ${isHistoryViewOpen && sessionHistory.length > 0 ? 'flex-1' : 'w-full'}`}>
-                    {currentSession ? (
-                      displayMode === 'merged' ? (
-                        <div className="grid grid-cols-2 gap-3 h-full">
-                          <div className="bg-white rounded-lg border border-purple-100 p-3 overflow-y-auto">
-                            <h4 className="text-xs font-medium text-purple-700 mb-2">原文</h4>
-                            <div className="text-sm text-gray-900 leading-relaxed">
-                              {realtimeSpeakers.length > 0 ? (
-                                <>
-                                  {realtimeSpeakers.map((segment, index) => (
-                                    <span key={segment.id}>
-                                      {segment.text}
-                                      {index < realtimeSpeakers.length - 1 && ' '}
-                                    </span>
-                                  ))}
-                                  <div ref={realtimeEndRef} />
-                                </>
-                              ) : (
-                                <p className="text-xs text-gray-400 italic">等待录音内容...</p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="bg-white rounded-lg border border-purple-100 p-3 overflow-y-auto">
-                            <h4 className="text-xs font-medium text-purple-700 mb-2">翻译</h4>
-                            <div className="text-sm text-gray-900 leading-relaxed">
-                              {realtimeSpeakers.length > 0 ? (
-                                realtimeSpeakers.map((segment, index) => (
-                                  <span key={segment.id}>
-                                    {segment.translation}
-                                    {index < realtimeSpeakers.length - 1 && ' '}
-                                  </span>
-                                ))
-                              ) : (
-                                <p className="text-xs text-gray-400 italic">等待翻译内容...</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="relative h-full bg-white rounded-lg border border-purple-100 overflow-hidden">
-                          <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500 z-10 shadow-lg"></div>
-                          <div className="absolute inset-0 pr-4">
-                            {realtimeSpeakers.length > 0 ? (
-                              realtimeSpeakers.map((segment) => {
-                                const elapsedTime = Date.now() - segment.timestamp.getTime();
-                                const maxDuration = 10000;
-                                const progress = Math.min(elapsedTime / maxDuration, 1);
-                                const width = `${progress * 80 + 20}%`;
-                                
-                                return (
-                                  <div
-                                    key={segment.id}
-                                    className="absolute right-4 transition-all duration-300 ease-out"
-                                    style={{
-                                      top: `${segment.verticalPosition}%`,
-                                      width: width,
-                                      transform: 'translateY(-50%)',
-                                    }}
-                                  >
-                                    <div className="bg-gradient-to-l from-purple-100 to-purple-50 border border-purple-200 rounded-lg p-2 shadow-md">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                                          segment.speaker === 'A' ? 'bg-blue-500 text-white' :
-                                          segment.speaker === 'B' ? 'bg-green-500 text-white' :
-                                          'bg-orange-500 text-white'
-                                        }`}>
-                                          {segment.speaker}
-                                        </div>
-                                        <span className="text-xs text-gray-600">{segment.language}</span>
-                                      </div>
-                                      <p className="text-sm text-gray-900 mb-1">{segment.text}</p>
-                                      <p className="text-xs text-gray-600">→ {segment.translation}</p>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            ) : (
-                              <div className="flex items-center justify-center h-full">
-                                <p className="text-sm text-gray-400 italic">等待录音内容...</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full">
-                        <History className="w-10 h-10 mb-3 opacity-50 text-gray-400" />
-                        <p className="text-sm font-medium mb-1 text-gray-700">点击"创建会话"开始实时翻译</p>
-                        <p className="text-xs text-gray-500">录音内容将实时显示在这里</p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <SessionHistorySidebar
-                    isOpen={isHistoryViewOpen}
-                    sessions={sessionHistory}
-                    onClose={() => setIsHistoryViewOpen(false)}
-                    onViewSession={viewSessionDetail}
-                    onDeleteSession={deleteHistorySession}
-                  />
-                </div>
-              </div>
-              
-              {/* Resize Handle */}
-              <div
-                onMouseDown={(e) => {
-                  setIsResizing(true);
-                  setDragStartY(e.clientY);
-                  setDragStartHeight(realtimePanelHeight);
-                }}
-                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-purple-300 transition-colors z-20 group"
-                title="拖拽调整高度"
-              >
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-1 bg-gray-300 rounded-full group-hover:bg-purple-400 transition-colors" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {messages.map((message) => {
-            if (message.type === 'realtime-session') {
-              return (
-                <div key={message.id} className="flex justify-center group">
-                  <div className="relative">
-                    <button
-                      onClick={() => message.sessionData && viewSessionDetail(message.sessionData)}
-                      className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-full px-4 py-2 hover:bg-purple-100 transition-colors"
-                    >
-                      <Radio className="w-4 h-4 text-purple-600" />
-                      <div className="text-sm">
-                        <span className="font-medium text-purple-900">实时翻译会话</span>
-                        <span className="text-purple-600 ml-2">
-                          {message.sessionData?.status === 'active' ? '进行中' : '已结束'}
-                        </span>
-                      </div>
-                      {message.sessionData?.status === 'ended' && (
-                        <span className="text-xs text-purple-600">
-                          {message.sessionData.speakers.length} 条记录
-                        </span>
-                      )}
-                    </button>
-                    
-                    <button
-                      onClick={() => deleteSession(message.id)}
-                      className="absolute -right-8 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-white border border-gray-200 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:border-red-300"
-                      title="删除会话"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-gray-500 hover:text-red-600" />
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            return (
+          {/* 消息列表 */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {messages.map((message) => (
               <div
                 key={message.id}
                 className={`flex flex-col gap-1.5 ${message.type === 'user' ? 'items-end' : 'items-start'}`}
@@ -902,7 +900,7 @@ export function ChatMode() {
                   }`}
                 >
                   {message.language && (
-                    <div className="text-xs mb-2 flex items-center gap-1">
+                    <div className="text-xs mb-2">
                       <span className={`px-2 py-0.5 rounded-full ${
                         message.type === 'user' 
                           ? 'bg-blue-900 bg-opacity-60 text-white' 
@@ -922,12 +920,11 @@ export function ChatMode() {
                           <button
                             key={index}
                             onClick={() => playInlineAudio(part.content)}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg transition-colors ${
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${
                               message.type === 'user'
                                 ? 'bg-white bg-opacity-20 hover:bg-opacity-30'
                                 : 'bg-blue-50 hover:bg-blue-100 text-blue-600'
                             }`}
-                            title="点击播放语音"
                           >
                             <Play className="w-3 h-3" />
                             <span className="text-xs">{part.content}</span>
@@ -942,69 +939,70 @@ export function ChatMode() {
                   {message.hasAudio && (
                     <button
                       onClick={() => playAudio(message.id)}
-                      className="p-1.5 rounded-full transition-colors hover:bg-gray-200"
-                      title="播放完整语音"
+                      className="p-1.5 rounded-full hover:bg-gray-200"
                     >
                       <Volume2 className="w-3.5 h-3.5 text-gray-500" />
                     </button>
                   )}
                   <button
                     onClick={() => copyText(message.text)}
-                    className="p-1.5 rounded-full transition-colors hover:bg-gray-200"
-                    title="复制文本"
+                    className="p-1.5 rounded-full hover:bg-gray-200"
                   >
                     <Copy className="w-3.5 h-3.5 text-gray-500" />
                   </button>
                   {message.type === 'user' && (
                     <button
                       onClick={() => retranslate(message.text)}
-                      className="p-1.5 rounded-full transition-colors hover:bg-gray-200"
-                      title="重新翻译"
+                      className="p-1.5 rounded-full hover:bg-gray-200"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-gray-500" />
                     </button>
                   )}
+                  <button
+                    onClick={() => saveMessageToNotebook(message)}
+                    className="p-1.5 rounded-full hover:bg-gray-200"
+                  >
+                    <BookmarkPlus className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="bg-white border-t border-gray-200 px-4 py-3 pb-safe">
-          <div className="flex items-center gap-2">
-            <Button
-              variant={isRecording ? 'default' : 'outline'}
-              size="icon"
-              onClick={handleVoiceInput}
-              className={isRecording ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
-              title="语音输入"
-            >
-              <Mic className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => toast.success('选择附件...')}
-              title="添加附件"
-            >
-              <Paperclip className="w-5 h-5" />
-            </Button>
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="输入消息...支持方言和多语混杂"
-              className="flex-1"
-            />
-            <Button onClick={handleSend} size="icon">
-              <Send className="w-5 h-5" />
-            </Button>
+            ))}
+            <div ref={messagesEndRef} />
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            提示：可以在普通话中混入方言词汇，或在方言中混入英文，系统会自动识别
-          </p>
+
+          {/* 输入区域 */}
+          <div className="bg-white border-t border-gray-200 px-4 py-3 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Button
+                variant={isRecording ? 'default' : 'outline'}
+                size="icon"
+                onClick={handleVoiceInput}
+                className={isRecording ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+              >
+                <Mic className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => toast.success('选择附件...')}
+              >
+                <Paperclip className="w-5 h-5" />
+              </Button>
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="输入消息...支持方言和多语混杂"
+                className="flex-1"
+              />
+              <Button onClick={handleSend} size="icon">
+                <Send className="w-5 h-5" />
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              提示：可以在普通话中混入方言词汇，或在方言中混入英文，系统会自动识别
+            </p>
+          </div>
         </div>
       </div>
     </div>
