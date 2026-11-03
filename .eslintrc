@@ -1,5 +1,6 @@
 {
   "extends": ["taro/react"],
+  "ignorePatterns": ["tailwind.config.js", "commitlint.config.mjs", "stylelint.config.mjs", "dist/", "node_modules/"],
   "rules": {
     "react/jsx-uses-react": "off",
     "react/react-in-jsx-scope": "off",
