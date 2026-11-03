@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# 良性提交约束：本钩子只读，故意不带 --fix/--write，不会改写工作区。
+# lint 基线尚未转绿，因此只提示、不阻断；基线干净后可把最后的 exit 0 换成阻断。
+
+artifacts=$(git diff --cached --name-only --diff-filter=A -- 'dist/*' '.temp/*' '.rn_temp/*' '*.local' 'node_modules/*')
+if [ -n "$artifacts" ]; then
+  echo "✖ 构建产物被暂存，提交已阻止："
+  printf '  %s\n' $artifacts
+  echo "  处理：git restore --staged <路径>，并确认 .gitignore 覆盖到它。"
+  exit 1
+fi
+
+staged_ts=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' '*.js' '*.jsx')
+staged_css=$(git diff --cached --name-only --diff-filter=ACM -- '*.css' '*.scss')
+
+if [ -n "$staged_ts" ]; then
+  printf '%s\n' $staged_ts | xargs npx --no -- eslint 2>&1 | tail -25
+fi
+
+if [ -n "$staged_css" ]; then
+  printf '%s\n' $staged_css | xargs npx --no -- stylelint 2>&1 | tail -25
+fi
+
+exit 0
