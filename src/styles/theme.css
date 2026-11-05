@@ -1,5 +1,6 @@
 :root {
-  --font-size: 16px;
+  /* h5 的 pxtransform 会把源 px 当作 750 设计稿除以 2，根字号改用 rem 才保持 16px 原尺寸 */
+  --font-size: 1rem;
   --background: #ffffff;
   --foreground: #252525;
   --card: #ffffff;
@@ -79,6 +80,8 @@
 @layer base {
   * {
     @apply border-border;
+    /* preflight 关闭后没有默认盒模型，固定高度（h-full/h-11）叠加 padding 会溢出裁掉底部 */
+    box-sizing: border-box;
   }
 
   body {

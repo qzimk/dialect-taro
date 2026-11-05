@@ -1,24 +1,18 @@
-"use client";
+import type { ReactNode } from 'react'
+import { Text, type TextProps } from '@tarojs/components'
 
-import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label";
+import { cn } from './utils'
 
-import { cn } from "./utils";
-
-function Label({
+// htmlFor 是 Web 的 label/input 关联，小程序没有这层语义，仅吸收调用点写法。
+export function Label({
   className,
-  ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root>) {
+  children,
+  htmlFor: _htmlFor,
+  ...rest
+}: TextProps & { children?: ReactNode; htmlFor?: string }) {
   return (
-    <LabelPrimitive.Root
-      data-slot="label"
-      className={cn(
-        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
-        className,
-      )}
-      {...props}
-    />
-  );
+    <Text className={cn('block text-sm font-medium leading-none', className)} {...rest}>
+      {children}
+    </Text>
+  )
 }
-
-export { Label };

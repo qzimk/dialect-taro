@@ -1,48 +1,60 @@
-"use client";
+import { createContext, useContext, type ReactNode } from 'react'
+import { View, type ViewProps } from '@tarojs/components'
 
-import * as React from "react";
-import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { cn } from './utils'
 
-import { cn } from "./utils";
+const PopoverContext = createContext<{ open: boolean; setOpen: (open: boolean) => void }>({
+  open: false,
+  setOpen: () => {},
+})
 
-function Popover({
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
-}
-
-function PopoverTrigger({
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
-}
-
-function PopoverContent({
-  className,
-  align = "center",
-  sideOffset = 4,
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+export function Popover({
+  open = false,
+  onOpenChange,
+  children,
+}: {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  children?: ReactNode
+}) {
   return (
-    <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Content
-        data-slot="popover-content"
-        align={align}
-        sideOffset={sideOffset}
-        className={cn(
-          "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border p-4 shadow-md outline-hidden",
-          className,
-        )}
-        {...props}
-      />
-    </PopoverPrimitive.Portal>
-  );
+    <PopoverContext.Provider value={{ open, setOpen: (next) => onOpenChange?.(next) }}>
+      <View className="relative inline-block">{children}</View>
+    </PopoverContext.Provider>
+  )
 }
 
-function PopoverAnchor({
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
+// Radix 的 asChild 是把 props 透传给子元素；这里子元素本就是 View 基元，包一层即可，
+// 该 prop 只用于吸收调用点的写法。
+export function PopoverTrigger({ asChild: _asChild, children }: { asChild?: boolean; children?: ReactNode }) {
+  const { open, setOpen } = useContext(PopoverContext)
+  return (
+    <View className="inline-flex" onClick={() => setOpen(!open)}>
+      {children}
+    </View>
+  )
 }
 
-export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor };
+// 基类不带宽高与内边距：cn 只去重不做 tailwind-merge，冲突类会由样式表顺序决定，
+// 交给调用点的 className（如 w-80 p-0）单独决定更可靠。
+export function PopoverContent({
+  className,
+  align = 'center',
+  children,
+  ...rest
+}: ViewProps & { align?: 'start' | 'center' | 'end'; children?: ReactNode }) {
+  const { open } = useContext(PopoverContext)
+  if (!open) return null
+  return (
+    <View
+      className={cn(
+        'absolute top-full z-50 mt-1 rounded-md border bg-white shadow-md',
+        align === 'end' ? 'right-0' : align === 'start' ? 'left-0' : 'left-1/2 -translate-x-1/2',
+        className,
+      )}
+      {...rest}
+    >
+      {children}
+    </View>
+  )
+}

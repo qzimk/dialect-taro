@@ -13,6 +13,7 @@
     "noUnusedParameters": true,
     "strictNullChecks": true,
     "sourceMap": true,
+    "skipLibCheck": true,
     "rootDir": ".",
     "jsx": "react-jsx",
     "allowJs": true,
@@ -20,11 +21,19 @@
     "typeRoots": [
       "node_modules/@types"
     ],
+    // @types/sass 是已废弃的空壳包（不含 index.d.ts），typeRoots 自动纳入它会让 TS2688
+    // 直接中断整个 program 的检查；显式限定 types 后其余类型仍按 import 正常解析。
+    "types": [
+      "node"
+    ],
     "paths": {
       // TS5090 leading './'
       "@/*": ["./src/*"]
     }
   },
   "include": ["./src", "./types", "./config"],
+  // src/app 是 Other 的 Web 原版，仅作规格参照；它依赖 lucide-react/sonner/react-router/Radix，
+  // 这些包在 Taro 仓库里不存在也不应安装，故不参与类型检查。
+  "exclude": ["./src/app/**/*"],
   "compileOnSave": false
 }

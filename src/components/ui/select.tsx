@@ -1,189 +1,146 @@
-"use client";
+import { Children, createContext, isValidElement, useContext, useState, type ReactNode } from 'react'
+import { View, ScrollView, type ViewProps } from '@tarojs/components'
 
-import * as React from "react";
-import * as SelectPrimitive from "@radix-ui/react-select";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-} from "lucide-react";
+import { Icon } from './icon'
+import { cn } from './utils'
 
-import { cn } from "./utils";
-
-function Select({
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+interface SelectCtx {
+  value: string
+  open: boolean
+  setOpen: (open: boolean) => void
+  pick: (value: string) => void
+  labelOf: (value: string) => ReactNode
 }
 
-function SelectGroup({
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Group>) {
-  return <SelectPrimitive.Group data-slot="select-group" {...props} />;
+const Ctx = createContext<SelectCtx | null>(null)
+
+function useSelect() {
+  const ctx = useContext(Ctx)
+  if (!ctx) throw new Error('Select 子组件必须在 <Select> 内使用')
+  return ctx
 }
 
-function SelectValue({
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  return <SelectPrimitive.Value data-slot="select-value" {...props} />;
+// 选项只有展开时才挂载，但收起状态下 SelectValue 也要显示当前选中项，
+// 所以直接从 children 元素树里收集 value→文案，不依赖挂载。
+function collectLabels(node: ReactNode, acc: Record<string, ReactNode>): Record<string, ReactNode> {
+  Children.forEach(node, (child) => {
+    if (!isValidElement(child)) return
+    const props = child.props as { value?: string; children?: ReactNode }
+    if (child.type === SelectItem && typeof props.value === 'string') {
+      acc[props.value] = props.children
+    } else {
+      collectLabels(props.children, acc)
+    }
+  })
+  return acc
 }
 
-function SelectTrigger({
-  className,
-  size = "default",
-  children,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  size?: "sm" | "default";
-}) {
+export interface SelectProps extends Omit<ViewProps, 'children'> {
+  value?: string
+  defaultValue?: string
+  onValueChange?: (value: string) => void
+  children?: ReactNode
+}
+
+export function Select({ className, value, defaultValue = '', onValueChange, children }: SelectProps) {
+  const [inner, setInner] = useState(defaultValue)
+  const [open, setOpen] = useState(false)
+  const current = value === undefined ? inner : value
+  const labels = collectLabels(children, {})
+
   return (
-    <SelectPrimitive.Trigger
-      data-slot="select-trigger"
-      data-size={size}
+    <Ctx.Provider
+      value={{
+        value: current,
+        open,
+        setOpen,
+        labelOf: (v: string) => labels[v] ?? v,
+        pick: (v: string) => {
+          setInner(v)
+          onValueChange?.(v)
+          setOpen(false)
+        },
+      }}
+    >
+      <View className={cn('relative', className)}>{children}</View>
+    </Ctx.Provider>
+  )
+}
+
+export function SelectTrigger({ className, children, ...rest }: ViewProps & { children?: ReactNode }) {
+  const { open, setOpen } = useSelect()
+  return (
+    <View
       className={cn(
-        "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-full items-center justify-between gap-2 rounded-md border bg-input-background px-3 py-2 text-sm whitespace-nowrap transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        // min-w-24（rem 档，不受 pxtransform 折半影响）保证至少容得下三四个汉字；
+        // 调用方若用 w-[Npx] 会被折半到只够一个字，所以宽度一律交给这里兜底。
+        'flex items-center justify-between gap-2 min-w-24 rounded-md border border-input bg-input-background px-3 py-2 text-sm whitespace-nowrap',
         className,
       )}
-      {...props}
+      onClick={() => setOpen(!open)}
+      {...rest}
     >
       {children}
-      <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-50" />
-      </SelectPrimitive.Icon>
-    </SelectPrimitive.Trigger>
-  );
+      <Icon name="ChevronDown" size={16} color="#9ca3af" className="shrink-0" />
+    </View>
+  )
 }
 
-function SelectContent({
-  className,
-  children,
-  position = "popper",
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+export function SelectValue({ placeholder }: { placeholder?: string }) {
+  const { value, labelOf } = useSelect()
+  if (!value) return <View className="min-w-0 flex-1 truncate text-muted-foreground">{placeholder}</View>
+  return <View className="min-w-0 flex-1 truncate">{labelOf(value)}</View>
+}
+
+export function SelectContent({ children }: { children?: ReactNode }) {
+  const { open, setOpen, value, labelOf } = useSelect()
+  if (!open) return null
   return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Content
-        data-slot="select-content"
-        className={cn(
-          "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
-          position === "popper" &&
-            "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-          className,
-        )}
-        position={position}
-        {...props}
+    // 触屏优先：不做锚定弹层（会被 overflow-hidden 祖先裁剪、随滚动容器滚走、顶出视口右缘），
+    // 改成全屏遮罩 + 底部升起面板，fixed 定位脱离一切裁剪上下文。
+    <View className="fixed inset-0 z-50" catchMove>
+      <View
+        className="absolute inset-0 bg-black/30"
+        onClick={() => setOpen(false)}
+      />
+      <View
+        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-lg flex flex-col"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <SelectScrollUpButton />
-        <SelectPrimitive.Viewport
-          className={cn(
-            "p-1",
-            position === "popper" &&
-              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1",
-          )}
-        >
+        <View className="flex items-center justify-between px-4 pt-3 pb-1 flex-shrink-0">
+          <View className="w-8" />
+          <View className="min-w-0 flex-1 text-center text-sm font-medium text-gray-900 truncate">{value ? labelOf(value) : '请选择'}</View>
+          <View className="w-8 flex justify-end" onClick={() => setOpen(false)}>
+            <Icon name="X" size={18} color="#6b7280" />
+          </View>
+        </View>
+        <ScrollView scrollY className="max-h-[50vh] flex-shrink" style={{ maxHeight: '50vh' }}>
           {children}
-        </SelectPrimitive.Viewport>
-        <SelectScrollDownButton />
-      </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
-  );
+        </ScrollView>
+      </View>
+    </View>
+  )
 }
 
-function SelectLabel({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Label>) {
-  return (
-    <SelectPrimitive.Label
-      data-slot="select-label"
-      className={cn("text-muted-foreground px-2 py-1.5 text-xs", className)}
-      {...props}
-    />
-  );
+export interface SelectItemProps extends Omit<ViewProps, 'value'> {
+  value: string
+  children?: ReactNode
 }
 
-function SelectItem({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+export function SelectItem({ className, value, children, ...rest }: SelectItemProps) {
+  const { value: current, pick } = useSelect()
   return (
-    <SelectPrimitive.Item
-      data-slot="select-item"
+    <View
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        'relative flex items-center justify-between gap-2 px-4 py-3 text-base active:bg-gray-100',
+        current === value ? 'text-blue-600 font-medium' : 'text-gray-700',
         className,
       )}
-      {...props}
+      onClick={() => pick(value)}
+      {...rest}
     >
-      <span className="absolute right-2 flex size-3.5 items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <CheckIcon className="size-4" />
-        </SelectPrimitive.ItemIndicator>
-      </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    </SelectPrimitive.Item>
-  );
+      {children}
+      {current === value && <Icon name="Check" size={16} color="#2563eb" />}
+    </View>
+  )
 }
-
-function SelectSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Separator>) {
-  return (
-    <SelectPrimitive.Separator
-      data-slot="select-separator"
-      className={cn("bg-border pointer-events-none -mx-1 my-1 h-px", className)}
-      {...props}
-    />
-  );
-}
-
-function SelectScrollUpButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
-  return (
-    <SelectPrimitive.ScrollUpButton
-      data-slot="select-scroll-up-button"
-      className={cn(
-        "flex cursor-default items-center justify-center py-1",
-        className,
-      )}
-      {...props}
-    >
-      <ChevronUpIcon className="size-4" />
-    </SelectPrimitive.ScrollUpButton>
-  );
-}
-
-function SelectScrollDownButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
-  return (
-    <SelectPrimitive.ScrollDownButton
-      data-slot="select-scroll-down-button"
-      className={cn(
-        "flex cursor-default items-center justify-center py-1",
-        className,
-      )}
-      {...props}
-    >
-      <ChevronDownIcon className="size-4" />
-    </SelectPrimitive.ScrollDownButton>
-  );
-}
-
-export {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-};

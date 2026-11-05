@@ -1,21 +1,35 @@
-import * as React from "react";
+import { Input as TaroInput, type InputProps as TaroInputProps } from '@tarojs/components'
 
-import { cn } from "./utils";
+import { cn } from './utils'
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex h-9 w-full min-w-0 rounded-md border px-3 py-1 text-base bg-input-background transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-        "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
-        className,
-      )}
-      {...props}
-    />
-  );
+// 调用点写的是 Web 习惯（onChange 取 e.target.value、onKeyDown 判 Enter），
+// 小程序里输入事件在 e.detail.value、回车走 onConfirm，这里做一次归一。
+export interface InputProps extends Omit<TaroInputProps, 'onChange' | 'type'> {
+  onChange?: (event: { target: { value: string }; detail: { value: string } }) => void
+  onKeyDown?: (event: { key: string }) => void
+  type?: string
+  className?: string
 }
 
-export { Input };
+const TYPES = ['text', 'number', 'idcard', 'digit', 'safe-password', 'nickname']
+
+function Input({ className, onChange, onKeyDown, type = 'text', ...rest }: InputProps) {
+  return (
+    <TaroInput
+      type={(TYPES as string[]).includes(type) ? (type as keyof TaroInputProps.Type) : 'text'}
+      placeholderStyle="color:#9ca3af"
+      className={cn(
+        'border border-input rounded-md bg-input-background px-3 py-1 h-9 w-full text-sm',
+        className,
+      )}
+      onInput={(event) => {
+        const value = event.detail.value
+        onChange?.({ target: { value }, detail: { value } })
+      }}
+      onConfirm={() => onKeyDown?.({ key: 'Enter' })}
+      {...rest}
+    />
+  )
+}
+
+export { Input }

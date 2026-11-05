@@ -1,53 +1,30 @@
-"use client";
+import type { ReactNode } from 'react'
+import { View, Image, Text, type ViewProps, type ImageProps } from '@tarojs/components'
 
-import * as React from "react";
-import * as AvatarPrimitive from "@radix-ui/react-avatar";
+import { cn } from './utils'
 
-import { cn } from "./utils";
-
-function Avatar({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Root>) {
+export function Avatar({ className, children, ...rest }: ViewProps & { children?: ReactNode }) {
   return (
-    <AvatarPrimitive.Root
-      data-slot="avatar"
-      className={cn(
-        "relative flex size-10 shrink-0 overflow-hidden rounded-full",
-        className,
-      )}
-      {...props}
-    />
-  );
+    <View
+      className={cn('relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full', className)}
+      {...rest}
+    >
+      {children}
+    </View>
+  )
 }
 
-function AvatarImage({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Image>) {
-  return (
-    <AvatarPrimitive.Image
-      data-slot="avatar-image"
-      className={cn("aspect-square size-full", className)}
-      {...props}
-    />
-  );
+export function AvatarImage({ className, src, ...rest }: ImageProps) {
+  return <Image className={cn('h-full w-full', className)} src={src ?? ''} {...rest} />
 }
 
-function AvatarFallback({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
+export function AvatarFallback({ className, children, ...rest }: ViewProps & { children?: ReactNode }) {
   return (
-    <AvatarPrimitive.Fallback
-      data-slot="avatar-fallback"
-      className={cn(
-        "bg-muted flex size-full items-center justify-center rounded-full",
-        className,
-      )}
-      {...props}
-    />
-  );
+    <View
+      className={cn('flex h-full w-full items-center justify-center rounded-full bg-muted', className)}
+      {...rest}
+    >
+      <Text className="text-xs">{children}</Text>
+    </View>
+  )
 }
-
-export { Avatar, AvatarImage, AvatarFallback };

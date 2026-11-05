@@ -1,2 +1,48 @@
 @import './tailwind.css';
 @import './theme.css';
+
+/* Taro 的 h5 端不带组件基础样式表（taro-components.css 只有 weui 那套 .taro-app-wrap 规则），
+   于是 <view> 落到 UA 默认的 display:inline，只有恰好带 flex/block 工具类、或作为 flex/grid
+   子项被 blockify 的元素才正常。小程序端 view 本身就是 display:block，这里把 h5 对齐过去，
+   否则像「分组卡片的外层容器」这类没有 display 类的 View 会退化成行内盒，吸顶、撑宽都失效。 */
+taro-view-core {
+  display: block;
+}
+
+/* 同理，scroll-view 的滚动容器语义也没人给：没有 overflow 它只会按内容撑高，
+   既不滚动，也让内部的 position: sticky 找不到滚动祖先。 */
+taro-scroll-view-core[scroll-y] {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 页面级假滚动区闸：任何元素把 scrollWidth 顶出视口，右侧就会多出一条拖不动的空档。
+   布局是 h-screen 的分栏结构，页面本身不存在合法的横向滚动，直接掐掉。
+   320 以下是明示不支持区：放开横向滚动让用户能拖过去看，而不是把内容剪掉。 */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* 支持的最小宽度：320（iPhone SE/mini 这一档）。低于它的窗口靠横向滚动兜底。 */
+@media (max-width: 319px) {
+  html,
+  body {
+    overflow-x: auto;
+  }
+}
+body {
+  min-width: 320px;
+}
+
+/* 支持的最大宽度：1280。桌面全屏（1920+）把两板和输入栏拉到失真，内容封顶居中、
+   背景照旧铺满。#app/body 只在 h5 存在，这几条规则对小程序是死代码。 */
+@media (min-width: 1280px) {
+  #app {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+}
+

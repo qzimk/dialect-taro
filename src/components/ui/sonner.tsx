@@ -1,25 +1,20 @@
-"use client";
+import Taro from '@tarojs/taro';
 
-import { useTheme } from "next-themes";
-import { Toaster as Sonner, ToasterProps } from "sonner";
+// 替代 sonner：小程序没有 DOM 挂载点，改用原生 toast。
+// 保留 sonner 的调用面（toast / toast.success / toast.error），调用点无需改写。
+const base = (message: string) => Taro.showToast({ title: message, icon: 'none' });
 
-const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
+export const toast = Object.assign(base, {
+  success: (message: string) => Taro.showToast({ title: message, icon: 'success' }),
+  error: (message: string) => Taro.showToast({ title: message, icon: 'error' }),
+  info: (message: string) => Taro.showToast({ title: message, icon: 'none' }),
+  warning: (message: string) => Taro.showToast({ title: message, icon: 'none' }),
+  message: (message: string) => Taro.showToast({ title: message, icon: 'none' }),
+  dismiss: () => Taro.hideToast(),
+});
 
-  return (
-    <Sonner
-      theme={theme as ToasterProps["theme"]}
-      className="toaster group"
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-        } as React.CSSProperties
-      }
-      {...props}
-    />
-  );
-};
+export function Toaster() {
+  return null;
+}
 
-export { Toaster };
+export default toast;

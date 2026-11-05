@@ -1,18 +1,32 @@
-import * as React from "react";
+import { Textarea as TaroTextarea, type TextareaProps as TaroTextareaProps } from '@tarojs/components'
 
-import { cn } from "./utils";
+import { cn } from './utils'
 
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
-  return (
-    <textarea
-      data-slot="textarea"
-      className={cn(
-        "resize-none border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-input-background px-3 py-2 text-base transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-        className,
-      )}
-      {...props}
-    />
-  );
+export interface TextareaProps extends Omit<TaroTextareaProps, 'onChange'> {
+  onChange?: (event: { target: { value: string }; detail: { value: string } }) => void
+  rows?: number
+  className?: string
 }
 
-export { Textarea };
+const LINE_HEIGHT = 22
+
+function Textarea({ className, onChange, rows = 4, style, ...rest }: TextareaProps) {
+  return (
+    <TaroTextarea
+      placeholderStyle="color:#9ca3af"
+      className={cn(
+        'border border-input rounded-md bg-input-background px-3 py-2 w-full text-sm',
+        className,
+      )}
+      // TextareaProps['style'] 允许字符串，字符串形式无法参与合并，只在对象时展开
+      style={{ minHeight: `${rows * LINE_HEIGHT + 16}px`, ...(typeof style === 'object' && style !== null ? style : {}) }}
+      onInput={(event) => {
+        const value = event.detail.value
+        onChange?.({ target: { value }, detail: { value } })
+      }}
+      {...rest}
+    />
+  )
+}
+
+export { Textarea }

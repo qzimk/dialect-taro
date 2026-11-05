@@ -7,7 +7,7 @@ const isApp = process.env.TARO_ENV !== 'h5'
 
 //
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
-export default defineConfig<'vite'>(async (merge, { command, mode }) => {
+export default defineConfig<'vite'>(async (merge) => {
   const baseConfig: UserConfigExport<'vite'> = {
     projectName: 'dialect-taro',
     date: '2026-1-16',
@@ -40,6 +40,15 @@ export default defineConfig<'vite'>(async (merge, { command, mode }) => {
 
       postcss: {
         pxtransform: {
+          enable: true,
+          config: {}
+        },
+        // mini 端必须显式开启 tailwindcss：Taro 的 vite 管线用这里的配置覆盖根 postcss.config.js，
+        // 缺了这一项时 @tailwind/@apply 会原样落进 wxss，小程序拿到的样式表里一条工具类都没有。
+        tailwindcss: {
+          enable: true
+        },
+        autoprefixer: {
           enable: true,
           config: {}
         },
@@ -78,7 +87,10 @@ export default defineConfig<'vite'>(async (merge, { command, mode }) => {
         },
         pxtransform: {
           enable: true,
-          config: {}
+          // html/body/#app 上的 min/max-width 是「支持的视口边界」，写的是真实像素，
+          // 不能被 750 设计稿折半（1280 会变 640）。
+          // @ts-expect-error Taro 运行时接受 'px'，但 postcss-pxtransform 的类型联合只列了 rpx/vw/rem
+          config: { targetUnit: 'px', selectorBlackList: ['html', 'body', '#app'] }
         },
         cssModules: {
           enable: false, // 默认为 false，如需使用 css modules 功能，则设为 true
